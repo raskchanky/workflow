@@ -62,6 +62,22 @@ module Workflow
             before_save_before_workflow
             self.workflow_state = @workflow.state.to_s
           end
+          
+          # this needs to be added because as of version 2.2, the rails association proxy checks to make sure association targets respond to methods before calling method on them.
+          # see activerecord-2.2.2/lib/active_record/associations/association_proxy.rb line 209 for reference
+          # this was not the case before 2.2, so everything here worked fine (since states and transitions use method_missing magic).
+          # now, because our states and transitions aren't real methods, if you load an object with Workflow mixed into it from an association, and try to query its state
+          # or call transitions on it, you get a NoMethodError thrown from the association proxy and Workflow is short circuited.
+          # this fixes that problem
+          def respond_to?(method)
+            found = false
+            found = true if method.to_s == 'state'
+            @workflow.states.each do |s|
+              found = true if s.to_s == method.to_s || (method.to_s[-1].chr == '?' && s.to_s == method.to_s[0..-2])
+              @workflow.state(s).events.each { |e| found = true if e.to_s == method.to_s }
+            end
+            found ? true : super
+          end
         end
       else
         # anything else gets this style of integration
